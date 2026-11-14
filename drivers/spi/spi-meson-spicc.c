@@ -630,7 +630,14 @@ static int meson_spicc_transfer_one(struct spi_controller *host,
 		spicc->xfer_remain = DIV_ROUND_UP(xfer->len, spicc->bytes_per_word);
 		meson_spicc_setup_dma(spicc);
 		writel_relaxed(SPICC_TE_EN, spicc->base + SPICC_INTREG);
-		writel_bits_relaxed(SPICC_SMC, SPICC_SMC, spicc->base + SPICC_CONREG);
+		/*
+		 * BSP discipline (Amlogic 4.9 drivers/amlogic/spicc/spicc.c, как
+		 * в стоке этой платы): SMC auto-DMA живёт только первую цепочку —
+		 * последующие сообщения диоды молча игнорируют. Ручной режим:
+		 * DMAREG заправлен setup_dma, старт — пульсом XCH.
+		 */
+		writel_bits_relaxed(SPICC_SMC, 0, spicc->base + SPICC_CONREG);
+		writel_bits_relaxed(SPICC_XCH, SPICC_XCH, spicc->base + SPICC_CONREG);
 	} else {
 		spicc->using_dma = false;
 		/* Setup burst */
@@ -719,18 +726,18 @@ static int meson_spicc_prepare_message(struct spi_controller *host,
 static int meson_spicc_unprepare_transfer(struct spi_controller *host)
 {
 	struct meson_spicc_device *spicc = spi_controller_get_devdata(host);
-	u32 conf = readl_relaxed(spicc->base + SPICC_CONREG) & SPICC_DATARATE_MASK;
 
 	/* Disable all IRQs */
 	writel(0, spicc->base + SPICC_INTREG);
 
-	device_reset_optional(&spicc->pdev->dev);
-
-	/* Set default configuration, keeping datarate field */
-	writel_relaxed(conf, spicc->base + SPICC_CONREG);
-
-	if (!spicc->data->has_oen)
-		pinctrl_select_default_state(&spicc->pdev->dev);
+	/*
+	 * BSP discipline (Amlogic 4.9 drivers/amlogic/spicc/spicc.c, как
+	 * в стоке этой платы): контроллер НЕ выключается между сообщениями
+	 * и делитель остаётся валидным. Прежний teardown (CONREG до одних
+	 * лишь бит делителя + device_reset_optional + pinctrl default) в
+	 * паре с кэшем CCF оставлял мульти-кадровые сессии без рабочего
+	 * пути восстановления без полного rebind контроллера.
+	 */
 
 	return 0;
 }
