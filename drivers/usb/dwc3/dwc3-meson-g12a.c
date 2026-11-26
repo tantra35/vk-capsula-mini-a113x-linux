@@ -706,9 +706,13 @@ static int dwc3_meson_g12a_probe(struct platform_device *pdev)
 	if (!priv)
 		return -ENOMEM;
 
+	dev_info(dev, "dwc3-meson-g12a probing\n");
+
 	base = devm_platform_ioremap_resource(pdev, 0);
-	if (IS_ERR(base))
+	if (IS_ERR(base)) {
+		dev_err_probe(dev, PTR_ERR(base), "ioremap failed\n");
 		return PTR_ERR(base);
+	}
 
 	priv->drvdata = of_device_get_match_data(&pdev->dev);
 	priv->dev = dev;
@@ -716,20 +720,24 @@ static int dwc3_meson_g12a_probe(struct platform_device *pdev)
 	priv->vbus = devm_regulator_get_optional(dev, "vbus");
 	if (IS_ERR(priv->vbus)) {
 		if (PTR_ERR(priv->vbus) == -EPROBE_DEFER)
-			return PTR_ERR(priv->vbus);
+			return dev_err_probe(dev, -EPROBE_DEFER, "vbus deferred\n");
 		priv->vbus = NULL;
 	}
 
 	ret = devm_clk_bulk_get(dev,
 				priv->drvdata->num_clks,
 				priv->drvdata->clks);
-	if (ret)
+	if (ret) {
+		dev_err_probe(dev, ret, "clk_bulk_get failed\n");
 		return ret;
+	}
 
 	ret = clk_bulk_prepare_enable(priv->drvdata->num_clks,
 				      priv->drvdata->clks);
-	if (ret)
+	if (ret) {
+		dev_err_probe(dev, ret, "clk_prepare_enable failed\n");
 		return ret;
+	}
 
 	platform_set_drvdata(pdev, priv);
 
@@ -741,12 +749,16 @@ static int dwc3_meson_g12a_probe(struct platform_device *pdev)
 	}
 
 	ret = reset_control_reset(priv->reset);
-	if (ret)
+	if (ret) {
+		dev_err(dev, "reset_control_reset failed: %d\n", ret);
 		goto err_disable_clks;
+	}
 
 	ret = dwc3_meson_g12a_get_phys(priv);
-	if (ret)
+	if (ret) {
+		dev_err(dev, "dwc3_meson_g12a_get_phys failed: %d\n", ret);
 		goto err_rearm;
+	}
 
 	ret = priv->drvdata->setup_regmaps(priv, base);
 	if (ret)
@@ -791,6 +803,7 @@ static int dwc3_meson_g12a_probe(struct platform_device *pdev)
 	}
 
 	ret = of_platform_populate(np, NULL, NULL, dev);
+	dev_info(dev, "of_platform_populate: %d\n", ret);
 	if (ret)
 		goto err_phys_power;
 

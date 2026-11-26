@@ -463,12 +463,16 @@ static int dwc2_driver_probe(struct platform_device *dev)
 	if (IS_ERR(hsotg->regs))
 		return PTR_ERR(hsotg->regs);
 
+	dev_info(&dev->dev, "dwc2 probing\n");
+
 	dev_dbg(&dev->dev, "mapped PA %08lx to VA %p\n",
 		(unsigned long)res->start, hsotg->regs);
 
 	retval = dwc2_lowlevel_hw_init(hsotg);
-	if (retval)
+	if (retval) {
+		dev_err(&dev->dev, "dwc2 lowlevel_hw_init failed: %d\n", retval);
 		return retval;
+	}
 
 	spin_lock_init(&hsotg->lock);
 
@@ -481,8 +485,10 @@ static int dwc2_driver_probe(struct platform_device *dev)
 	}
 
 	retval = dwc2_lowlevel_hw_enable(hsotg);
-	if (retval)
+	if (retval) {
+		dev_err(&dev->dev, "dwc2 lowlevel_hw_enable failed: %d\n", retval);
 		return retval;
+	}
 
 	hsotg->needs_byte_swap = dwc2_check_core_endianness(hsotg);
 
